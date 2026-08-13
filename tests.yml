@@ -1,0 +1,123 @@
+name: Foodgram API Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test_api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: foodgram
+          POSTGRES_USER: foodgram_user
+          POSTGRES_PASSWORD: foodgram_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run migrations
+        env:
+          DB_ENGINE: django.db.backends.postgresql
+          DB_NAME: foodgram
+          DB_USER: foodgram_user
+          DB_PASSWORD: foodgram_password
+          DB_HOST: localhost
+          DB_PORT: 5432
+          SECRET_KEY: test-secret-key
+          DEBUG: 'False'
+          ALLOWED_HOSTS: localhost,127.0.0.1
+        run: |
+          cd backend
+          python manage.py migrate
+
+      - name: Load ingredients
+        env:
+          DB_ENGINE: django.db.backends.postgresql
+          DB_NAME: foodgram
+          DB_USER: foodgram_user
+          DB_PASSWORD: foodgram_password
+          DB_HOST: localhost
+          DB_PORT: 5432
+          SECRET_KEY: test-secret-key
+          DEBUG: 'False'
+          ALLOWED_HOSTS: localhost,127.0.0.1
+        run: |
+          cd backend
+          python manage.py load_ingredients ../data/ingredients.json
+
+      - name: Start server
+        env:
+          DB_ENGINE: django.db.backends.postgresql
+          DB_NAME: foodgram
+          DB_USER: foodgram_user
+          DB_PASSWORD: foodgram_password
+          DB_HOST: localhost
+          DB_PORT: 5432
+          SECRET_KEY: test-secret-key
+          DEBUG: 'False'
+          ALLOWED_HOSTS: localhost,127.0.0.1
+        run: |
+          cd backend
+          python manage.py runserver 0.0.0.0:8000 &
+          sleep 5
+
+      - name: Test API endpoints
+        run: |
+          curl -f http://localhost:8000/api/tags/ || exit 1
+
+          curl -f http://localhost:8000/api/ingredients/ || exit 1
+
+          curl -f -X POST http://localhost:8000/api/users/ \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"test@test.com","username":"testuser","first_name":"Test","last_name":"User","password":"TestPass123"}' || exit 1
+
+          TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/token/login/ \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"test@test.com","password":"TestPass123"}' | python -c "import sys,json; print(json.load(sys.stdin)['auth_token'])")
+
+          curl -f -X POST http://localhost:8000/api/recipes/ \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Token $TOKEN" \
+            -d '{"tags":[1],"ingredients":[{"id":1,"amount":100}],"name":"Test Recipe","text":"Description","cooking_time":30}' || exit 1
+
+          curl -f http://localhost:8000/api/recipes/1/ || exit 1
+
+          curl -f -X POST http://localhost:8000/api/recipes/1/favorite/ \
+            -H "Authorization: Token $TOKEN" || exit 1
+
+          curl -f -X POST http://localhost:8000/api/recipes/1/shopping_cart/ \
+            -H "Authorization: Token $TOKEN" || exit 1
+
+          curl -f http://localhost:8000/api/recipes/download_shopping_cart/ \
+            -H "Authorization: Token $TOKEN" || exit 1
+
+          curl -f -X POST http://localhost:8000/api/users/1/subscribe/ \
+            -H "Authorization: Token $TOKEN" || exit 1
+
+          curl -f http://localhost:8000/api/users/subscriptions/ \
+            -H "Authorization: Token $TOKEN" || exit 1
+
+          echo "All API tests passed!"
