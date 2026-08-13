@@ -5,3 +5,5 @@ backend_dir: backend
 frontend_dir: frontend
 data_dir: data
 nginx_config: infra/nginx.conf
+login: MauriceLM@yandex.ru
+password: 123456me!
