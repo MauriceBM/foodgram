@@ -2,3 +2,5 @@ vm_name: r-backend-vm-foodgram
 username: ubuntu
 host: 81.26.177.158
 ssh_private_key_path: ~/.ssh/user_key_wsl
+login: MauriceLM@yandex.ru
+password: 123456me!
