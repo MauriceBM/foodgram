@@ -1,5 +1,6 @@
 repo_owner: MauriceBM
 repository: foodgram
+vm_name: foodgram-vm
 docker_compose_path: infra/docker-compose.yml
 backend_dir: backend
 frontend_dir: frontend
