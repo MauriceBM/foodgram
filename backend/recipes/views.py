@@ -1,269 +1,178 @@
-from django.db.models import Sum
-from rest_framework import viewsets, status
+from http import HTTPStatus
+from io import BytesIO
+
+from django.http import FileResponse
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import (
-    IsAuthenticated,
-    IsAuthenticatedOrReadOnly,
-)
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .models import Tag, Ingredient, Recipe
-from .serializers import (
-    TagSerializer,
+
+from interactions.permissions import IsAuthorOrReadOnly
+from recipes.filters import RecipeFilter
+from recipes.models import Ingredient, Recipe, Tag
+from recipes.serializers import (
     IngredientSerializer,
+    RecipeCreateUpdateSerializer,
     RecipeReadSerializer,
-    RecipeWriteSerializer,
+    TagSerializer,
 )
+
+SAFE_METHODS = ('GET', 'HEAD', 'OPTIONS')
 
 
 class TagViewSet(viewsets.ReadOnlyModelViewSet):
-    """Tags are read-only via API."""
+    """Вьюсет для тегов."""
 
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
     pagination_class = None
 
 
 class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
-    """Ingredients with search by name."""
+    """Вьюсет для ингредиентов."""
 
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
     pagination_class = None
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        name = self.request.query_params.get('name')
-        if name:
-            queryset = queryset.filter(
-                name__istartswith=name
-            )
-        return queryset
+    filter_backends = (DjangoFilterBackend,)
+    filterset_fields = ('name',)
 
 
 class RecipeViewSet(viewsets.ModelViewSet):
-    """Full CRUD for recipes + custom actions."""
+    """Вьюсет для рецептов."""
 
-    permission_classes = [IsAuthenticatedOrReadOnly]
-    http_method_names = ['get', 'post', 'patch', 'delete']
+    queryset = Recipe.objects.select_related(
+        'author'
+    ).prefetch_related('tags', 'recipe_ingredients')
+    permission_classes = (IsAuthorOrReadOnly,)
+    filter_backends = (DjangoFilterBackend,)
+    filterset_class = RecipeFilter
 
     def get_serializer_class(self):
-        if self.action in ('create', 'update', 'partial_update'):
-            return RecipeWriteSerializer
-        return RecipeReadSerializer
+        if self.request.method in SAFE_METHODS:
+            return RecipeReadSerializer
+        return RecipeCreateUpdateSerializer
 
-    def get_queryset(self):
-        queryset = Recipe.objects.select_related(
-            'author'
-        ).prefetch_related(
-            'tags', 'recipe_ingredients__ingredient'
-        )
-        tags = self.request.query_params.getlist('tags')
-        if tags:
-            queryset = queryset.filter(
-                tags__slug__in=tags
-            ).distinct()
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
-        author = self.request.query_params.get('author')
-        if author:
-            queryset = queryset.filter(author_id=author)
+    def perform_create(self, serializer):
+        serializer.save(author=self.request.user)
 
-        is_favorited = self.request.query_params.get(
-            'is_favorited'
-        )
-        if is_favorited == '1':
-            user = self.request.user
-            if user.is_authenticated:
-                queryset = queryset.filter(
-                    favorites__user=user
-                )
-
-        is_in_shopping_cart = self.request.query_params.get(
-            'is_in_shopping_cart'
-        )
-        if is_in_shopping_cart == '1':
-            user = self.request.user
-            if user.is_authenticated:
-                queryset = queryset.filter(
-                    shopping_cart_entries__user=user
-                )
-
-        return queryset
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        recipe = serializer.save(author=request.user)
-        read_serializer = RecipeReadSerializer(
-            recipe,
-            context={'request': request},
-        )
-        headers = self.get_success_headers(read_serializer.data)
-        return Response(
-            read_serializer.data,
-            status=status.HTTP_201_CREATED,
-            headers=headers,
-        )
-
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(
-            instance, data=request.data, partial=False
-        )
-        serializer.is_valid(raise_exception=True)
+    def perform_update(self, serializer):
         serializer.save()
-        read_serializer = RecipeReadSerializer(
-            instance,
-            context={'request': request},
-        )
-        return Response(read_serializer.data)
-
-    def partial_update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(
-            instance, data=request.data, partial=True
-        )
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        read_serializer = RecipeReadSerializer(
-            instance,
-            context={'request': request},
-        )
-        return Response(read_serializer.data)
 
     @action(
-        detail=True,
-        methods=['get'],
-        url_path='get-link',
-        url_name='get-link',
-    )
-    def get_link(self, request, pk=None):
-        recipe = self.get_object()
-        short_link = f'{request.scheme}://'
-        short_link += f'{request.get_host()}/s/'
-        short_link += f'{recipe.id}'
-        return Response({'short-link': short_link})
-
-    @action(
-        detail=True,
-        methods=['post', 'delete'],
+        detail=True, methods=['post', 'delete'],
         permission_classes=[IsAuthenticated],
-        url_path='favorite',
-        url_name='favorite',
     )
     def favorite(self, request, pk=None):
-        from interactions.models import Favorite
         recipe = self.get_object()
-        if request.method == 'POST':
-            obj, created = Favorite.objects.get_or_create(
-                user=request.user,
-                recipe=recipe,
-            )
-            if not created:
-                return Response(
-                    {'detail': 'Already in favorites.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            return Response(
-                {
-                    'id': recipe.id,
-                    'name': recipe.name,
-                    'image': recipe.image.url,
-                    'cooking_time': recipe.cooking_time,
-                },
-                status=status.HTTP_201_CREATED,
-            )
-        deleted, _ = Favorite.objects.filter(
-            user=request.user,
-            recipe=recipe,
-        ).delete()
-        if not deleted:
-            return Response(
-                {'detail': 'Not in favorites.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return self._toggle_relation(
+            request, recipe, 'favorite',
+            'Рецепт уже в избранном.',
+        )
 
     @action(
-        detail=True,
-        methods=['post', 'delete'],
+        detail=True, methods=['post', 'delete'],
         permission_classes=[IsAuthenticated],
-        url_path='shopping_cart',
-        url_name='shopping-cart',
     )
     def shopping_cart(self, request, pk=None):
-        from interactions.models import ShoppingCart
         recipe = self.get_object()
-        if request.method == 'POST':
-            obj, created = ShoppingCart.objects.get_or_create(
-                user=request.user,
-                recipe=recipe,
-            )
-            if not created:
-                return Response(
-                    {'detail': 'Already in shopping cart.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            return Response(
-                {
-                    'id': recipe.id,
-                    'name': recipe.name,
-                    'image': recipe.image.url,
-                    'cooking_time': recipe.cooking_time,
-                },
-                status=status.HTTP_201_CREATED,
-            )
-        deleted, _ = ShoppingCart.objects.filter(
-            user=request.user,
-            recipe=recipe,
-        ).delete()
-        if not deleted:
-            return Response(
-                {'detail': 'Not in shopping cart.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return self._toggle_relation(
+            request, recipe, 'shopping_cart',
+            'Рецепт уже в корзине.',
+        )
 
     @action(
-        detail=False,
-        methods=['get'],
+        detail=False, methods=['get'],
         permission_classes=[IsAuthenticated],
-        url_path='download_shopping_cart',
-        url_name='download-shopping-cart',
     )
     def download_shopping_cart(self, request):
-        from interactions.models import ShoppingCart
-
-        items = (
-            ShoppingCart.objects.filter(user=request.user)
-            .values(
-                'recipe__recipe_ingredients__ingredient__name',
-                'recipe__recipe_ingredients__ingredient__measurement_unit',
-            )
-            .annotate(
-                total=Sum(
-                    'recipe__recipe_ingredients__amount'
-                )
-            )
-        )
-        lines = []
-        for item in items:
-            name = item[
-                'recipe__recipe_ingredients__ingredient__name'
-            ]
-            unit = item[
-                'recipe__recipe_ingredients__ingredient__measurement_unit'
-            ]
-            total = item['total']
-            lines.append(f'{name} ({unit}) — {total}')
-
-        content = '\n'.join(lines)
-        response = Response(
-            content,
-            content_type='text/plain; charset=utf-8',
+        buffer = self._generate_shopping_cart(request.user)
+        response = FileResponse(
+            buffer, content_type='text/plain'
         )
         response['Content-Disposition'] = (
-            'attachment; filename="shopping_list.txt"'
+            'attachment; filename="shopping_cart.txt"'
         )
         return response
+
+    def _toggle_relation(
+        self, request, recipe, relation_name, error_msg
+    ):
+        from interactions.models import (
+            Favorite,
+            ShoppingCart,
+        )
+
+        model_map = {
+            'favorite': Favorite,
+            'shopping_cart': ShoppingCart,
+        }
+        model = model_map[relation_name]
+
+        if request.method == 'POST':
+            if model.objects.filter(
+                user=request.user, recipe=recipe
+            ).exists():
+                return Response(
+                    {'errors': error_msg},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+            model.objects.create(
+                user=request.user, recipe=recipe
+            )
+            serializer = RecipeReadSerializer(
+                recipe, context={'request': request}
+            )
+            return Response(
+                serializer.data, status=HTTPStatus.CREATED
+            )
+
+        obj = model.objects.filter(
+            user=request.user, recipe=recipe
+        ).first()
+        if obj:
+            obj.delete()
+        return Response(status=HTTPStatus.NO_CONTENT)
+
+    @staticmethod
+    def _generate_shopping_cart(user):
+        from interactions.models import ShoppingCart
+
+        cart_items = ShoppingCart.objects.filter(
+            user=user
+        ).select_related('recipe').prefetch_related(
+            'recipe__recipe_ingredients__ingredient'
+        )
+        ingredients_dict = {}
+        for item in cart_items:
+            for ri in item.recipe.recipe_ingredients.all():
+                name = ri.ingredient.name
+                unit = ri.ingredient.measurement_unit
+                amount = ri.amount
+                key = f'{name}_{unit}'
+                if key in ingredients_dict:
+                    ingredients_dict[key]['amount'] += amount
+                else:
+                    ingredients_dict[key] = {
+                        'name': name,
+                        'unit': unit,
+                        'amount': amount,
+                    }
+
+        lines = ['Список покупок:\n']
+        for data in ingredients_dict.values():
+            line = (
+                f"- {data['name']} — "
+                f"{data['amount']} {data['unit']}"
+            )
+            lines.append(line)
+
+        buffer = BytesIO('\n'.join(lines).encode('utf-8'))
+        buffer.seek(0)
+        return buffer
