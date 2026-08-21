@@ -1,52 +1,57 @@
-from django.db import models
 from django.conf import settings
+from django.core.validators import MinValueValidator
+from django.db import models
+
+from recipes.constants import (
+    MAX_NAME_LENGTH,
+    MAX_SLUG_LENGTH,
+    MAX_TEXT_LENGTH,
+    MIN_COOKING_TIME,
+    MIN_INGREDIENT_AMOUNT,
+)
 
 
 class Tag(models.Model):
-    """Tag for recipe classification."""
+    """Модель тега."""
 
     name = models.CharField(
-        max_length=200,
+        max_length=MAX_NAME_LENGTH,
         unique=True,
-        verbose_name='Название тега'
+        verbose_name='Название тега',
     )
     slug = models.SlugField(
-        max_length=200,
+        max_length=MAX_SLUG_LENGTH,
         unique=True,
-        verbose_name='Slug'
+        verbose_name='Слаг',
     )
 
     class Meta:
         verbose_name = 'Тег'
         verbose_name_plural = 'Теги'
-        ordering = ['name']
 
     def __str__(self):
         return self.name
 
 
 class Ingredient(models.Model):
-    """Ingredient with measurement unit."""
+    """Модель ингредиента."""
 
     name = models.CharField(
-        max_length=200,
-        db_index=True,
-        verbose_name='Название ингредиента'
+        max_length=MAX_NAME_LENGTH,
+        verbose_name='Название ингредиента',
     )
     measurement_unit = models.CharField(
-        max_length=200,
-        verbose_name='Единица измерения'
+        max_length=MAX_NAME_LENGTH,
+        verbose_name='Единица измерения',
     )
 
     class Meta:
         verbose_name = 'Ингредиент'
         verbose_name_plural = 'Ингредиенты'
-        ordering = ['name']
-        unique_together = ('name', 'measurement_unit')
         constraints = [
             models.UniqueConstraint(
                 fields=['name', 'measurement_unit'],
-                name='unique_ingredient_name_unit'
+                name='unique_ingredient',
             )
         ]
 
@@ -55,83 +60,120 @@ class Ingredient(models.Model):
 
 
 class Recipe(models.Model):
-    """Recipe published by a user."""
+    """Модель рецепта."""
 
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='recipes',
-        verbose_name='Автор рецепта'
-    )
-    name = models.CharField(
-        max_length=256,
-        verbose_name='Название рецепта'
-    )
-    image = models.ImageField(
-        upload_to='recipes/images/',
-        verbose_name='Изображение рецепта'
-    )
-    text = models.TextField(
-        verbose_name='Описание рецепта'
+        verbose_name='Автор',
     )
     ingredients = models.ManyToManyField(
         Ingredient,
         through='RecipeIngredient',
         related_name='recipes',
-        verbose_name='Ингредиенты'
+        verbose_name='Ингредиенты',
     )
     tags = models.ManyToManyField(
         Tag,
         related_name='recipes',
-        verbose_name='Теги'
+        verbose_name='Теги',
+    )
+    name = models.CharField(
+        max_length=MAX_NAME_LENGTH,
+        verbose_name='Название рецепта',
+    )
+    image = models.ImageField(
+        upload_to='recipes/',
+        verbose_name='Изображение',
+    )
+    text = models.TextField(
+        max_length=MAX_TEXT_LENGTH,
+        verbose_name='Описание рецепта',
     )
     cooking_time = models.PositiveIntegerField(
-        verbose_name='Время приготовления (минуты)'
+        validators=[
+            MinValueValidator(MIN_COOKING_TIME),
+        ],
+        verbose_name='Время приготовления (мин)',
     )
     pub_date = models.DateTimeField(
         auto_now_add=True,
-        db_index=True,
-        verbose_name='Дата публикации'
+        verbose_name='Дата публикации',
     )
 
     class Meta:
         verbose_name = 'Рецепт'
         verbose_name_plural = 'Рецепты'
-        ordering = ['-pub_date']
+        ordering = ('-pub_date',)
 
     def __str__(self):
         return self.name
 
 
 class RecipeIngredient(models.Model):
-    """Intermediate model linking Recipe and Ingredient with amount."""
+    """Промежуточная модель связи рецепта и ингредиента."""
 
     recipe = models.ForeignKey(
         Recipe,
         on_delete=models.CASCADE,
         related_name='recipe_ingredients',
-        verbose_name='Рецепт'
+        verbose_name='Рецепт',
     )
     ingredient = models.ForeignKey(
         Ingredient,
-        on_delete=models.PROTECT,
-        related_name='recipe_ingredients',
-        verbose_name='Ингредиент'
+        on_delete=models.CASCADE,
+        verbose_name='Ингредиент',
     )
     amount = models.PositiveIntegerField(
-        verbose_name='Количество'
+        validators=[
+            MinValueValidator(MIN_INGREDIENT_AMOUNT),
+        ],
+        verbose_name='Количество',
     )
 
     class Meta:
-        verbose_name = 'Ингредиент в рецепте'
-        verbose_name_plural = 'Ингредиенты в рецептах'
-        unique_together = ('recipe', 'ingredient')
+        verbose_name = 'Ингредиент рецепта'
+        verbose_name_plural = 'Ингредиенты рецептов'
         constraints = [
             models.UniqueConstraint(
                 fields=['recipe', 'ingredient'],
-                name='unique_recipe_ingredient'
+                name='unique_recipe_ingredient',
             )
         ]
 
     def __str__(self):
-        return f'{self.recipe.name} - {self.ingredient.name}: {self.amount}'
+        return (
+            f'{self.recipe}: {self.ingredient} '
+            f'- {self.amount}'
+        )
+
+
+class Subscription(models.Model):
+    """Модель подписки."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='following',
+        verbose_name='Подписчик',
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='followers',
+        verbose_name='Автор',
+    )
+
+    class Meta:
+        verbose_name = 'Подписка'
+        verbose_name_plural = 'Подписки'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'author'],
+                name='unique_subscription',
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.user} -> {self.author}'

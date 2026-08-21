@@ -1,32 +1,43 @@
 from django.contrib import admin
-from .models import Tag, Ingredient, Recipe, RecipeIngredient
 
-
-@admin.register(Tag)
-class TagAdmin(admin.ModelAdmin):
-    list_display = ('name', 'slug')
-    search_fields = ('name',)
-    prepopulated_fields = {'slug': ('name',)}
-
-
-@admin.register(Ingredient)
-class IngredientAdmin(admin.ModelAdmin):
-    list_display = ('name', 'measurement_unit')
-    search_fields = ('name',)
+from recipes.models import (
+    Ingredient,
+    Recipe,
+    RecipeIngredient,
+    Tag,
+)
 
 
 class RecipeIngredientInline(admin.TabularInline):
+    """Инлайн для ингредиентов рецепта."""
+
     model = RecipeIngredient
     extra = 1
 
 
+@admin.register(Tag)
+class TagAdmin(admin.ModelAdmin):
+    """Админ-панель тегов."""
+
+    list_display = ('name', 'slug')
+    search_fields = ('name',)
+
+
+@admin.register(Ingredient)
+class IngredientAdmin(admin.ModelAdmin):
+    """Админ-панель ингредиентов."""
+
+    list_display = ('name', 'measurement_unit')
+    search_fields = ('name',)
+
+
 @admin.register(Recipe)
 class RecipeAdmin(admin.ModelAdmin):
-    list_display = ('name', 'author', 'favorites_count')
-    search_fields = ('name', 'author__username')
-    list_filter = ('tags',)
-    inlines = [RecipeIngredientInline]
+    """Админ-панель рецептов."""
 
-    def favorites_count(self, obj):
-        return obj.favorites.count()
-    favorites_count.short_description = 'В избранном'
+    list_display = (
+        'name', 'author', 'cooking_time', 'pub_date',
+    )
+    search_fields = ('name', 'author__username')
+    list_filter = ('tags', 'pub_date')
+    inlines = (RecipeIngredientInline,)

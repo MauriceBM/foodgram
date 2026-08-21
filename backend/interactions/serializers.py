@@ -1,34 +1,19 @@
 from rest_framework import serializers
-from recipes.serializers import RecipeReadSerializer
+
+from interactions.models import Favorite, ShoppingCart
 
 
-class FavoriteRecipeSerializer(serializers.Serializer):
-    """Minimal recipe serializer for favorites/cart."""
+class FavoriteSerializer(serializers.ModelSerializer):
+    """Сериализатор избранного."""
 
-    id = serializers.IntegerField(read_only=True)
-    name = serializers.CharField(read_only=True)
-    image = serializers.ImageField(read_only=True)
-    cooking_time = serializers.IntegerField(
-        read_only=True
-    )
+    class Meta:
+        model = Favorite
+        fields = ('user', 'recipe')
 
 
-class SubscriptionSerializer(serializers.Serializer):
-    """Serializer for subscription response."""
+class ShoppingCartSerializer(serializers.ModelSerializer):
+    """Сериализатор корзины."""
 
-    email = serializers.EmailField(read_only=True)
-    id = serializers.IntegerField(read_only=True)
-    username = serializers.CharField(read_only=True)
-    first_name = serializers.CharField(read_only=True)
-    last_name = serializers.CharField(read_only=True)
-    is_subscribed = serializers.BooleanField(
-        read_only=True
-    )
-    recipes = RecipeReadSerializer(
-        many=True,
-        read_only=True,
-    )
-    recipes_count = serializers.IntegerField(
-        read_only=True
-    )
-    avatar = serializers.ImageField(read_only=True)
+    class Meta:
+        model = ShoppingCart
+        fields = ('user', 'recipe')
