@@ -141,4 +141,12 @@ dmypy.json
 static/
 media/
 
+*.sqlite3*.tar.gz
+*.zip
+frontend/build/
+frontend/node_modules/
+backend/venv/
+__pycache__/
+*.pyc
+.env
 *.sqlite3
