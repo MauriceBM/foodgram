@@ -29,3 +29,4 @@ social-auth-core==4.9.1
 sqlparse==0.5.5
 tzdata==2026.3
 urllib3==2.7.0
+django-filter==24.3
