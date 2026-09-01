@@ -73,7 +73,7 @@ DATABASES = {
     }
 }
 
-AUTH_USER_MODEL = 'users.CustomUser'
+AUTH_USER_MODEL = 'users.User'
 
 LANGUAGE_CODE = 'ru-RU'
 TIME_ZONE = 'UTC'
@@ -104,11 +104,11 @@ DJOSER = {
     'LOGIN_FIELD': 'email',
     'SERIALIZERS': {
         'user_create': (
-            'users.serializers.CustomUserCreateSerializer'
+            'users.serializers.UserCreateSerializer'
         ),
-        'user': 'users.serializers.CustomUserSerializer',
+        'user': 'users.serializers.UserSerializer',
         'current_user': (
-            'users.serializers.CustomUserSerializer'
+            'users.serializers.UserSerializer'
         ),
     },
 }

@@ -91,7 +91,7 @@ class Recipe(models.Model):
         max_length=MAX_TEXT_LENGTH,
         verbose_name='Описание рецепта',
     )
-    cooking_time = models.PositiveIntegerField(
+    cooking_time = models.PositiveSmallIntegerField(
         validators=[
             MinValueValidator(MIN_COOKING_TIME),
         ],
@@ -112,7 +112,7 @@ class Recipe(models.Model):
 
 
 class RecipeIngredient(models.Model):
-    """Промежуточная модель связи рецепта и ингредиента."""
+    """Промежуточная модель рецепта и ингредиента."""
 
     recipe = models.ForeignKey(
         Recipe,
@@ -123,9 +123,10 @@ class RecipeIngredient(models.Model):
     ingredient = models.ForeignKey(
         Ingredient,
         on_delete=models.CASCADE,
+        related_name='recipe_ingredients',
         verbose_name='Ингредиент',
     )
-    amount = models.PositiveIntegerField(
+    amount = models.PositiveSmallIntegerField(
         validators=[
             MinValueValidator(MIN_INGREDIENT_AMOUNT),
         ],

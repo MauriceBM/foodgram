@@ -2,21 +2,31 @@ from django.conf import settings
 from django.db import models
 
 
-class Favorite(models.Model):
-    """Модель избранного."""
+class UserRecipeRelation(models.Model):
+    """Абстрактная модель связи пользователь-рецепт."""
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='favorites',
+        related_name='%(class)s_relations',
         verbose_name='Пользователь',
     )
     recipe = models.ForeignKey(
         'recipes.Recipe',
         on_delete=models.CASCADE,
-        related_name='favorites',
+        related_name='%(class)s_relations',
         verbose_name='Рецепт',
     )
+
+    class Meta:
+        abstract = True
+
+    def __str__(self):
+        return f'{self.user}: {self.recipe}'
+
+
+class Favorite(UserRecipeRelation):
+    """Модель избранного."""
 
     class Meta:
         verbose_name = 'Избранное'
@@ -28,25 +38,9 @@ class Favorite(models.Model):
             )
         ]
 
-    def __str__(self):
-        return f'{self.user}: {self.recipe}'
 
-
-class ShoppingCart(models.Model):
+class ShoppingCart(UserRecipeRelation):
     """Модель корзины покупок."""
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='shopping_carts',
-        verbose_name='Пользователь',
-    )
-    recipe = models.ForeignKey(
-        'recipes.Recipe',
-        on_delete=models.CASCADE,
-        related_name='shopping_carts',
-        verbose_name='Рецепт',
-    )
 
     class Meta:
         verbose_name = 'Корзина покупок'
@@ -57,6 +51,3 @@ class ShoppingCart(models.Model):
                 name='unique_shopping_cart',
             )
         ]
-
-    def __str__(self):
-        return f'{self.user}: {self.recipe}'

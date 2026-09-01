@@ -1,6 +1,6 @@
 from http import HTTPStatus
 
-from django.shortcuts import get_object_or_404
+from django.db.models import Count
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -8,15 +8,15 @@ from rest_framework.response import Response
 
 from recipes.models import Subscription
 from recipes.serializers import SubscriptionSerializer
-from users.models import CustomUser
-from users.serializers import CustomUserSerializer
+from users.models import User
+from users.serializers import UserSerializer
 
 
-class CustomUserViewSet(viewsets.ModelViewSet):
+class UserViewSet(viewsets.ModelViewSet):
     """Вьюсет для пользователей."""
 
-    queryset = CustomUser.objects.all()
-    serializer_class = CustomUserSerializer
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
 
     @action(
         detail=False, methods=['get'],
@@ -31,33 +31,28 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         permission_classes=[IsAuthenticated],
     )
     def subscribe(self, request, id=None):
-        author = get_object_or_404(CustomUser, id=id)
+        author = self.get_object()
         if request.method == 'POST':
-            if request.user == author:
-                return Response(
-                    {'errors': 'Нельзя подписаться на себя.'},
-                    status=HTTPStatus.BAD_REQUEST,
-                )
-            if Subscription.objects.filter(
-                user=request.user, author=author
-            ).exists():
-                return Response(
-                    {'errors': 'Подписка уже существует.'},
-                    status=HTTPStatus.BAD_REQUEST,
-                )
-            Subscription.objects.create(
-                user=request.user, author=author
-            )
             serializer = SubscriptionSerializer(
-                author, context={'request': request}
+                data={
+                    'user': request.user.id,
+                    'author': author.id,
+                },
+                context={'request': request},
             )
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
             return Response(
-                serializer.data, status=HTTPStatus.CREATED
+                serializer.data, status=HTTPStatus.CREATED,
             )
-        subscription = get_object_or_404(
-            Subscription, user=request.user, author=author
-        )
-        subscription.delete()
+        deleted_count, _ = Subscription.objects.filter(
+            user=request.user, author=author,
+        ).delete()
+        if not deleted_count:
+            return Response(
+                {'errors': 'Подписка не найдена.'},
+                status=HTTPStatus.BAD_REQUEST,
+            )
         return Response(status=HTTPStatus.NO_CONTENT)
 
     @action(
@@ -65,11 +60,11 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         permission_classes=[IsAuthenticated],
     )
     def subscriptions(self, request):
-        authors = CustomUser.objects.filter(
-            following__user=request.user
-        )
+        authors = User.objects.filter(
+            followers__user=request.user,
+        ).annotate(recipes_count=Count('recipes'))
         page = self.paginate_queryset(authors)
         serializer = SubscriptionSerializer(
-            page, many=True, context={'request': request}
+            page, many=True, context={'request': request},
         )
         return self.get_paginated_response(serializer.data)

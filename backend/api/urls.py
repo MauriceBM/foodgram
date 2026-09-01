@@ -10,15 +10,16 @@ from recipes.views import (
     RecipeViewSet,
     TagViewSet,
 )
-from users.views import CustomUserViewSet
+from users.views import UserViewSet
 
 router = DefaultRouter()
 router.register('tags', TagViewSet, basename='tags')
 router.register(
-    'ingredients', IngredientViewSet, basename='ingredients'
+    'ingredients', IngredientViewSet,
+    basename='ingredients',
 )
 router.register('recipes', RecipeViewSet, basename='recipes')
-router.register('users', CustomUserViewSet, basename='users')
+router.register('users', UserViewSet, basename='users')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -27,14 +28,14 @@ urlpatterns = [
     path(
         'recipes/<int:pk>/favorite/',
         FavoriteViewSet.as_view({
-            'post': 'create', 'delete': 'destroy'
+            'post': 'create', 'delete': 'destroy',
         }),
         name='recipe-favorite',
     ),
     path(
         'recipes/<int:pk>/shopping_cart/',
         ShoppingCartViewSet.as_view({
-            'post': 'create', 'delete': 'destroy'
+            'post': 'create', 'delete': 'destroy',
         }),
         name='recipe-shopping-cart',
     ),

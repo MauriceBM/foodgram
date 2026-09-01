@@ -10,8 +10,8 @@ from users.constants import (
 )
 
 
-class CustomUser(AbstractUser):
-    """Модель кастомного пользователя."""
+class User(AbstractUser):
+    """Модель пользователя."""
 
     email = models.EmailField(
         max_length=MAX_EMAIL_LENGTH,
@@ -41,7 +41,7 @@ class CustomUser(AbstractUser):
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = [
-        'username', 'first_name', 'last_name'
+        'username', 'first_name', 'last_name',
     ]
 
     class Meta:

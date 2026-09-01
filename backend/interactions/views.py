@@ -1,6 +1,5 @@
 from http import HTTPStatus
 
-from django.shortcuts import get_object_or_404
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -10,7 +9,6 @@ from interactions.serializers import (
     FavoriteSerializer,
     ShoppingCartSerializer,
 )
-from recipes.models import Recipe
 
 
 class FavoriteViewSet(viewsets.ModelViewSet):
@@ -19,28 +17,26 @@ class FavoriteViewSet(viewsets.ModelViewSet):
     serializer_class = FavoriteSerializer
     permission_classes = [IsAuthenticated]
     http_method_names = ['post', 'delete']
+    queryset = Favorite.objects.all()
 
-    def create(self, request, *args, **kwargs):
-        recipe = get_object_or_404(
-            Recipe, id=kwargs.get('pk')
-        )
-        serializer = self.get_serializer(data={
-            'user': request.user.id,
-            'recipe': recipe.id,
-        })
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(
-            serializer.data, status=HTTPStatus.CREATED
-        )
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['recipe_id'] = self.kwargs.get('pk')
+        return context
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
     def destroy(self, request, *args, **kwargs):
-        favorite = get_object_or_404(
-            Favorite,
+        deleted_count, _ = Favorite.objects.filter(
             user=request.user,
-            recipe_id=kwargs.get('pk'),
-        )
-        favorite.delete()
+            recipe_id=self.kwargs.get('pk'),
+        ).delete()
+        if not deleted_count:
+            return Response(
+                {'errors': 'Рецепт не в избранном.'},
+                status=HTTPStatus.BAD_REQUEST,
+            )
         return Response(status=HTTPStatus.NO_CONTENT)
 
 
@@ -50,26 +46,24 @@ class ShoppingCartViewSet(viewsets.ModelViewSet):
     serializer_class = ShoppingCartSerializer
     permission_classes = [IsAuthenticated]
     http_method_names = ['post', 'delete']
+    queryset = ShoppingCart.objects.all()
 
-    def create(self, request, *args, **kwargs):
-        recipe = get_object_or_404(
-            Recipe, id=kwargs.get('pk')
-        )
-        serializer = self.get_serializer(data={
-            'user': request.user.id,
-            'recipe': recipe.id,
-        })
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(
-            serializer.data, status=HTTPStatus.CREATED
-        )
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['recipe_id'] = self.kwargs.get('pk')
+        return context
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
     def destroy(self, request, *args, **kwargs):
-        cart_item = get_object_or_404(
-            ShoppingCart,
+        deleted_count, _ = ShoppingCart.objects.filter(
             user=request.user,
-            recipe_id=kwargs.get('pk'),
-        )
-        cart_item.delete()
+            recipe_id=self.kwargs.get('pk'),
+        ).delete()
+        if not deleted_count:
+            return Response(
+                {'errors': 'Рецепт не в корзине.'},
+                status=HTTPStatus.BAD_REQUEST,
+            )
         return Response(status=HTTPStatus.NO_CONTENT)
