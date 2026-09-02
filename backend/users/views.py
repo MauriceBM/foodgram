@@ -6,17 +6,19 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from api.serializers import (
+    SubscriptionSerializer,
+    UserAPISerializer,
+)
 from recipes.models import Subscription
-from recipes.serializers import SubscriptionSerializer
 from users.models import User
-from users.serializers import UserSerializer
 
 
 class UserViewSet(viewsets.ModelViewSet):
     """Вьюсет для пользователей."""
 
     queryset = User.objects.all()
-    serializer_class = UserSerializer
+    serializer_class = UserAPISerializer
 
     @action(
         detail=False, methods=['get'],
@@ -24,7 +26,9 @@ class UserViewSet(viewsets.ModelViewSet):
     )
     def me(self, request):
         serializer = self.get_serializer(request.user)
-        return Response(serializer.data, status=HTTPStatus.OK)
+        return Response(
+            serializer.data, status=HTTPStatus.OK,
+        )
 
     @action(
         detail=True, methods=['post', 'delete'],
@@ -43,7 +47,8 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             serializer.save()
             return Response(
-                serializer.data, status=HTTPStatus.CREATED,
+                serializer.data,
+                status=HTTPStatus.CREATED,
             )
         deleted_count, _ = Subscription.objects.filter(
             user=request.user, author=author,
@@ -65,6 +70,9 @@ class UserViewSet(viewsets.ModelViewSet):
         ).annotate(recipes_count=Count('recipes'))
         page = self.paginate_queryset(authors)
         serializer = SubscriptionSerializer(
-            page, many=True, context={'request': request},
+            page, many=True,
+            context={'request': request},
         )
-        return self.get_paginated_response(serializer.data)
+        return self.get_paginated_response(
+            serializer.data,
+        )

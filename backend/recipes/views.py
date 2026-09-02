@@ -1,8 +1,7 @@
 from http import HTTPStatus
 from io import BytesIO
 
-from django.db.models import BooleanField, Value
-from django.db.models.functions import Coalesce
+from django.db.models import BooleanField, Exists, OuterRef, Value
 from django.http import FileResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets
@@ -10,16 +9,16 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from interactions.models import Favorite, ShoppingCart
-from interactions.permissions import IsAuthorOrReadOnly
-from recipes.filters import RecipeFilter
-from recipes.models import Ingredient, Recipe, RecipeIngredient, Tag
-from recipes.serializers import (
+from api.serializers import (
     IngredientSerializer,
     RecipeCreateUpdateSerializer,
     RecipeReadSerializer,
     TagSerializer,
 )
+from interactions.models import Favorite, ShoppingCart
+from interactions.permissions import IsAuthorOrReadOnly
+from recipes.filters import RecipeFilter
+from recipes.models import Recipe, RecipeIngredient, Tag
 
 SAFE_METHODS = ('GET', 'HEAD', 'OPTIONS')
 
@@ -35,11 +34,14 @@ class TagViewSet(viewsets.ReadOnlyModelViewSet):
 class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
     """Вьюсет для ингредиентов."""
 
-    queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
     pagination_class = None
     filter_backends = (DjangoFilterBackend,)
     filterset_fields = ('name',)
+
+    def get_queryset(self):
+        from recipes.models import Ingredient
+        return Ingredient.objects.all()
 
 
 class RecipeViewSet(viewsets.ModelViewSet):
@@ -58,13 +60,17 @@ class RecipeViewSet(viewsets.ModelViewSet):
         request = self.request
         if request.user.is_authenticated:
             queryset = queryset.annotate(
-                is_favorited=Coalesce(
-                    Value(True),
-                    output_field=BooleanField(),
+                is_favorited=Exists(
+                    Favorite.objects.filter(
+                        user=request.user,
+                        recipe=OuterRef('pk'),
+                    ),
                 ),
-                is_in_shopping_cart=Coalesce(
-                    Value(True),
-                    output_field=BooleanField(),
+                is_in_shopping_cart=Exists(
+                    ShoppingCart.objects.filter(
+                        user=request.user,
+                        recipe=OuterRef('pk'),
+                    ),
                 ),
             )
         else:
@@ -151,7 +157,8 @@ class RecipeViewSet(viewsets.ModelViewSet):
                 recipe, context={'request': request},
             )
             return Response(
-                serializer.data, status=HTTPStatus.CREATED,
+                serializer.data,
+                status=HTTPStatus.CREATED,
             )
         deleted_count, _ = model.objects.filter(
             user=request.user, recipe=recipe,
@@ -167,7 +174,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
     def _generate_shopping_cart(user):
         cart_ingredients = (
             RecipeIngredient.objects.filter(
-                recipe__shopping_carts__user=user,
+                recipe__shoppingcart_relations__user=user,
             ).select_related('ingredient')
         )
         ingredients_dict = {}

@@ -4,11 +4,11 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from interactions.models import Favorite, ShoppingCart
-from interactions.serializers import (
+from api.serializers import (
     FavoriteSerializer,
     ShoppingCartSerializer,
 )
+from interactions.models import Favorite, ShoppingCart
 
 
 class FavoriteViewSet(viewsets.ModelViewSet):
