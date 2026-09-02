@@ -150,3 +150,5 @@ __pycache__/
 *.pyc
 .env
 *.sqlite3
+foodgram.tar.gz
+*.tar.gz
