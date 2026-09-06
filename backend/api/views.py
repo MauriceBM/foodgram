@@ -1,7 +1,13 @@
 from http import HTTPStatus
 from io import BytesIO
 
-from django.db.models import BooleanField, Exists, OuterRef, Value
+from django.db.models import (
+    BooleanField,
+    Count,
+    Exists,
+    OuterRef,
+    Value,
+)
 from django.http import FileResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets
@@ -10,15 +16,26 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from api.serializers import (
+    FavoriteSerializer,
     IngredientSerializer,
     RecipeCreateUpdateSerializer,
     RecipeReadSerializer,
+    ShoppingCartSerializer,
+    SubscriptionSerializer,
     TagSerializer,
+    UserAPISerializer,
 )
 from interactions.models import Favorite, ShoppingCart
 from interactions.permissions import IsAuthorOrReadOnly
 from recipes.filters import RecipeFilter
-from recipes.models import Recipe, RecipeIngredient, Tag
+from recipes.models import (
+    Ingredient,
+    Recipe,
+    RecipeIngredient,
+    Subscription,
+    Tag,
+)
+from users.models import User
 
 SAFE_METHODS = ('GET', 'HEAD', 'OPTIONS')
 
@@ -34,14 +51,11 @@ class TagViewSet(viewsets.ReadOnlyModelViewSet):
 class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
     """Вьюсет для ингредиентов."""
 
+    queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
     pagination_class = None
     filter_backends = (DjangoFilterBackend,)
     filterset_fields = ('name',)
-
-    def get_queryset(self):
-        from recipes.models import Ingredient
-        return Ingredient.objects.all()
 
 
 class RecipeViewSet(viewsets.ModelViewSet):
@@ -104,7 +118,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
     def favorite(self, request, pk=None):
         recipe = self.get_object()
         return self._toggle_relation(
-            request, recipe, Favorite,
+            request, recipe, FavoriteSerializer, Favorite,
             'Рецепт уже в избранном.',
             'Рецепт не в избранном.',
         )
@@ -116,7 +130,8 @@ class RecipeViewSet(viewsets.ModelViewSet):
     def shopping_cart(self, request, pk=None):
         recipe = self.get_object()
         return self._toggle_relation(
-            request, recipe, ShoppingCart,
+            request, recipe, ShoppingCartSerializer,
+            ShoppingCart,
             'Рецепт уже в корзине.',
             'Рецепт не в корзине.',
         )
@@ -126,9 +141,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
         permission_classes=[IsAuthenticated],
     )
     def download_shopping_cart(self, request):
-        buffer = self._generate_shopping_cart(
-            request.user,
-        )
+        buffer = self._generate_shopping_cart(request.user)
         response = FileResponse(
             buffer, content_type='text/plain',
         )
@@ -139,8 +152,8 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _toggle_relation(
-        request, recipe, model,
-        exists_error, not_found_error,
+        request, recipe, serializer_class,
+        model, exists_error, not_found_error,
     ):
         if request.method == 'POST':
             if model.objects.filter(
@@ -150,14 +163,19 @@ class RecipeViewSet(viewsets.ModelViewSet):
                     {'errors': exists_error},
                     status=HTTPStatus.BAD_REQUEST,
                 )
-            model.objects.create(
-                user=request.user, recipe=recipe,
+            serializer = serializer_class(
+                data={
+                    'user': request.user.id,
+                    'recipe': recipe.id,
+                },
             )
-            serializer = RecipeReadSerializer(
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            recipe_serializer = RecipeReadSerializer(
                 recipe, context={'request': request},
             )
             return Response(
-                serializer.data,
+                recipe_serializer.data,
                 status=HTTPStatus.CREATED,
             )
         deleted_count, _ = model.objects.filter(
@@ -203,3 +221,123 @@ class RecipeViewSet(viewsets.ModelViewSet):
         )
         buffer.seek(0)
         return buffer
+
+
+class UserViewSet(viewsets.ModelViewSet):
+    """Вьюсет для пользователей."""
+
+    queryset = User.objects.all()
+    serializer_class = UserAPISerializer
+
+    @action(
+        detail=False, methods=['get'],
+        permission_classes=[IsAuthenticated],
+    )
+    def me(self, request):
+        serializer = self.get_serializer(request.user)
+        return Response(
+            serializer.data, status=HTTPStatus.OK,
+        )
+
+    @action(
+        detail=True, methods=['post', 'delete'],
+        permission_classes=[IsAuthenticated],
+    )
+    def subscribe(self, request, id=None):
+        author = self.get_object()
+        if request.method == 'POST':
+            serializer = SubscriptionSerializer(
+                data={
+                    'user': request.user.id,
+                    'author': author.id,
+                },
+                context={'request': request},
+            )
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(
+                serializer.data,
+                status=HTTPStatus.CREATED,
+            )
+        deleted_count, _ = Subscription.objects.filter(
+            user=request.user, author=author,
+        ).delete()
+        if not deleted_count:
+            return Response(
+                {'errors': 'Подписка не найдена.'},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+        return Response(status=HTTPStatus.NO_CONTENT)
+
+    @action(
+        detail=False, methods=['get'],
+        permission_classes=[IsAuthenticated],
+    )
+    def subscriptions(self, request):
+        authors = User.objects.filter(
+            followers__user=request.user,
+        ).annotate(recipes_count=Count('recipes'))
+        page = self.paginate_queryset(authors)
+        serializer = SubscriptionSerializer(
+            page, many=True,
+            context={'request': request},
+        )
+        return self.get_paginated_response(serializer.data)
+
+
+class FavoriteViewSet(viewsets.ModelViewSet):
+    """Вьюсет для избранного."""
+
+    serializer_class = FavoriteSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ['post', 'delete']
+    queryset = Favorite.objects.all()
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['recipe_id'] = self.kwargs.get('pk')
+        return context
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        deleted_count, _ = Favorite.objects.filter(
+            user=request.user,
+            recipe_id=self.kwargs.get('pk'),
+        ).delete()
+        if not deleted_count:
+            return Response(
+                {'errors': 'Рецепт не в избранном.'},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+        return Response(status=HTTPStatus.NO_CONTENT)
+
+
+class ShoppingCartViewSet(viewsets.ModelViewSet):
+    """Вьюсет для корзины."""
+
+    serializer_class = ShoppingCartSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ['post', 'delete']
+    queryset = ShoppingCart.objects.all()
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['recipe_id'] = self.kwargs.get('pk')
+        return context
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        deleted_count, _ = ShoppingCart.objects.filter(
+            user=request.user,
+            recipe_id=self.kwargs.get('pk'),
+        ).delete()
+        if not deleted_count:
+            return Response(
+                {'errors': 'Рецепт не в корзине.'},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+        return Response(status=HTTPStatus.NO_CONTENT)
