@@ -1,6 +1,6 @@
-vm_name: r-backend-vm-foodgram
+vm_name: r-backend-vm-2184124172
 username: ubuntu
 host: 81.26.177.158
 ssh_private_key_path: ~/.ssh/user_key_wsl
-login: MauriceLM@yandex.ru
-password: 123456me!
+login: admin@foodgram.com
+password: Adminsite20!

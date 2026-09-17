@@ -42,3 +42,27 @@ docker compose exec backend python manage.py load_ingredients /app/data/ingredie
 docker compose exec -it backend python manage.py createsuperuser
 
 По адресу http://localhost изучите фронтенд веб-приложения, а по адресу http://localhost/api/docs/ — спецификацию API.
+
+## Данные сервера
+
+- **IP-адрес**: 81.26.177.158
+
+
+## Административная учетная запись
+
+- **Email**: admin@foodgram.com
+- **Пароль**: Adminsite20!
+
+## Тестовые пользователи
+
+- Email 
+   user1@foodgram.com
+   user2@foodgram.com
+
+- Пароль
+   Ivanuser1!
+   Mariauser2@
+
+- Имя 
+   Иван Петров
+   Мария Сидорова
