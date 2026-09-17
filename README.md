@@ -46,6 +46,7 @@ docker compose exec -it backend python manage.py createsuperuser
 ## Данные сервера
 
 - **IP-адрес**: 81.26.177.158
+- **Сайт**: http://81.26.177.158
 
 
 ## Административная учетная запись

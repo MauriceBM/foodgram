@@ -27,7 +27,7 @@ from api.serializers import (
 )
 from interactions.models import Favorite, ShoppingCart
 from interactions.permissions import IsAuthorOrReadOnly
-from recipes.filters import RecipeFilter
+from api.filters import RecipeFilter
 from recipes.models import (
     Ingredient,
     Recipe,
